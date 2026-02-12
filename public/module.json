@@ -1,0 +1,11 @@
+{
+  "id": "vault-sync",
+  "title": "Vault Sync",
+  "description": "Sync externally-managed Actors into Foundry via an encrypted vault.",
+  "version": "0.0.1",
+  "authors": [{ "name": "Ryan O’Connor" }],
+
+  "compatibility": { "minimum": "13", "verified": "13" },
+
+  "esmodules": ["main.js"]
+}
