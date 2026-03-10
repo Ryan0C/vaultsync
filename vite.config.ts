@@ -4,7 +4,11 @@ import { viteStaticCopy } from "vite-plugin-static-copy";
 export default defineConfig({
   plugins: [
     viteStaticCopy({
-      targets: [{ src: "public/*", dest: "." }]
+      targets: [
+        { src: "public/*", dest: "." },
+        { src: "templates/**/*", dest: "templates" },
+        { src: "templates/**/*", dest: "templates" },
+      ]
     })
   ],
   build: {

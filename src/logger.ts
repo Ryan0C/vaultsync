@@ -22,7 +22,7 @@ export type LogLevel = "debug" | "info" | "warn" | "error";
 function isDebugEnabled(): boolean {
   try {
     // Game may not be ready yet.
-    return !!game?.settings?.get?.(MODULE_ID, "debug");
+    return !!(game?.settings as any)?.get?.(MODULE_ID, "debug");
   } catch {
     return false;
   }

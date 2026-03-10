@@ -1,0 +1,31 @@
+<div class="vaultsync-tools" style="display:flex; flex-direction:column; gap:10px;">
+  <p style="margin:0; opacity:0.8;">
+    Export compendium item pack indexes for your external app.
+  </p>
+
+  <div style="display:flex; gap:8px; flex-wrap:wrap;">
+    <button type="button" data-action="refresh">
+      🔄 Refresh
+    </button>
+
+    <button type="button" data-action="exportAll">
+      📦 Export All Item Pack Indexes
+    </button>
+  </div>
+
+  <hr />
+
+  <div style="display:flex; flex-direction:column; gap:8px;">
+    <label for="vs-pack-select"><strong>Export Selected Pack Index</strong></label>
+
+    <select id="vs-pack-select" style="width:100%;">
+      {{#each packs as |p|}}
+        <option value="{{p.collection}}">{{p.title}}</option>
+      {{/each}}
+    </select>
+
+    <button type="button" data-action="exportOne">
+      📤 Export Selected Pack
+    </button>
+  </div>
+</div>

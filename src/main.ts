@@ -1,21 +1,24 @@
+/**
+ * main.ts
+ * VaultSync entrypoint (Foundry VTT v13).
+ *
+ * Responsibilities:
+ *  - Define MODULE_ID (single source of truth).
+ *  - Call bootstrap to register hooks/socket and start watcher.
+ *
+ * Keep this file tiny.
+ */
+
+import { bootstrapVaultSync } from "./runtime/bootstrap";
 import { MODULE_ID } from "./constants";
-import { registerSettings } from "./settings";
-import { bootstrapVault } from "./vault/runtime/bootstrap";
-import { registerVaultHooks } from "./vault/runtime/hooks";
-import { logger } from "./logger";
-import { registerImportBridge } from "./vault/runtime/import_bridge";
-import { registerImportUiHooks } from "./vault/runtime/import_ui";
 
-Hooks.once("init", () => {
-  logger.info("init");
-  registerSettings();
-  registerVaultHooks();
-});
+bootstrapVaultSync({
+  moduleId: MODULE_ID,
 
-Hooks.once("ready", async () => {
-  await bootstrapVault();
-
-  // Import runtime
-  registerImportBridge();   // GM listener
-  registerImportUiHooks();  // context menu + header buttons
+  // v1 defaults
+  startWatcher: true,
+  watchIntervalMs: 1500,
+  watchMaxPerTick: 5,
+  watcherGmOnly: true,
+  source: "data"
 });
