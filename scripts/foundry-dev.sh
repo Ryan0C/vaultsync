@@ -14,6 +14,7 @@ fi
 FOUNDRY_DIR="${FOUNDRY_DIR:-$HOME/foundry/foundryvtt}"
 DATA_DIR="${DATA_DIR:-$HOME/foundry/foundry-data-dev}"
 PORT="${PORT:-30000}"
+FOUNDRY_LOG_LEVEL="${FOUNDRY_LOG_LEVEL:-debug}"
 
 # Sanity checks
 if [ ! -f "$FOUNDRY_DIR/main.js" ]; then
@@ -26,4 +27,4 @@ mkdir -p "$DATA_DIR"
 
 # Run Foundry (v13+ Node distribution)
 cd "$FOUNDRY_DIR"
-node main.js --dataPath="$DATA_DIR" --port="$PORT" --logLevel=debug
+node main.js --dataPath="$DATA_DIR" --port="$PORT" --logLevel="$FOUNDRY_LOG_LEVEL"
