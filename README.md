@@ -153,12 +153,14 @@ Other systems may work if they follow similar Actor structures, but are not offi
 # Architecture Overview
 
 ```
-src/vault/
-  export/      → serialization + writers
-  import/      → safe GM import layer
-  io/          → FilePicker abstraction + write queue
-  runtime/     → bootstrap + hooks + import bridge
-  schema/      → shared JSON models
+src/
+  export/      → deterministic export writers + manifests
+  import/      → safe actor/item/journal/chat import handlers
+  runtime/     → Foundry hooks + startup wiring
+  storage/     → FilePicker abstraction + write queue
+  contract/    → import/export contract helpers
+  ui/          → in-Foundry module UI surfaces
+  main.ts      → module entrypoint
 ```
 
 Technical documentation lives in:
