@@ -25,6 +25,14 @@
 import type { FileSource } from "./index";
 import { getVaultSyncPaths, ensureVaultSyncDirs } from "./index";
 import { listFiles, readJson, tombstone } from "./json";
+import {
+  decodeTargetFromMarker,
+  tryParseTimestampFromName,
+  entityKeyFromFilename,
+  findSupersededInboxFilesByMode,
+  type InboxDedupeCandidate,
+  type InboxFileMode,
+} from "./watchFilenames";
 
 export type ImportFileStatus = "processed" | "failed";
 
@@ -150,36 +158,12 @@ export async function startImportInboxWatcher(
       let processedCount = 0;
 
       // ── Per-entity deduplication ──────────────────────────────────────────
-      // When multiple inbox files exist for the same entity (actor, item, etc.)
-      // only the newest should be applied. Older files represent superseded
-      // states — applying them after the newest would revert the actor to a
-      // stale value and trigger Foundry reactive systems (concentration saves,
-      // Bloodied condition, etc.) for every intermediate state.
-      //
-      // File format: {prefix}.{entityId}.{epochMs}.{nonce}.json
-      // We parse {prefix}.{entityId} as the group key and keep only the file
-      // with the largest embedded timestamp per group.  Superseded files are
-      // marked as processed WITHOUT invoking the handler so the watcher never
-      // revisits them, but VaultSync also never applies their stale content.
-      const entityNewest = new Map<string, string>(); // key → newest filename
-      for (const name of candidates) {
-        if (seen.has(name) || processed.has(name) || failed.has(name)) continue;
-        const key = entityKeyFromFilename(name);
-        if (!key) continue; // non-standard filename — let it through as-is
-        const current = entityNewest.get(key);
-        if (!current || filenameTs(name) > filenameTs(current)) {
-          entityNewest.set(key, name);
-        }
-      }
-
-      // Build the superseded set: unprocessed files that have a newer sibling
-      const superseded = new Set<string>();
-      for (const name of candidates) {
-        if (seen.has(name) || processed.has(name) || failed.has(name)) continue;
-        const key = entityKeyFromFilename(name);
-        if (!key) continue;
-        if (entityNewest.get(key) !== name) superseded.add(name);
-      }
+      // We only supersede older siblings when every file in an entity group is
+      // a full snapshot. If any file is patch-shaped (or unknown), preserve
+      // strict ordering and apply all files so partial updates are never lost.
+      const unprocessed = candidates.filter((name) => !seen.has(name) && !processed.has(name) && !failed.has(name));
+      const dedupeCandidates = await classifyDedupeCandidates(unprocessed, inboxDir, source);
+      const superseded = findSupersededInboxFilesByMode(dedupeCandidates);
 
       // Mark superseded files as processed (no handler call) so they are
       // never revisited.  Write in the background — don't block the main loop.
@@ -286,44 +270,6 @@ function clamp(n: number, lo: number, hi: number): number {
  * We can't perfectly recover original if safeTarget replaced chars,
  * but in this system inbox filenames are usually safe already.
  */
-function decodeTargetFromMarker(markerName: string): string | null {
-  const name = String(markerName);
-
-  // Require ".done.json" ending (as produced by tombstone)
-  if (!name.endsWith(".done.json")) return null;
-
-  // Strip suffix
-  const stripped = name.slice(0, -".done.json".length);
-
-  // Format: <target>.<ts>.<rand>
-  const parts = stripped.split(".");
-  if (parts.length < 3) return null;
-
-  // target might contain dots; ts is second-to-last? Actually last two are ts and rand.
-  const ts = parts[parts.length - 2];
-  const rand = parts[parts.length - 1];
-  if (!/^\d{10,}$/.test(ts)) return null;
-  if (!rand.length) return null;
-
-  const targetParts = parts.slice(0, parts.length - 2);
-  const target = targetParts.join(".");
-  return target || null;
-}
-
-/**
- * Try to parse a timestamp from a filename like:
- *   name.<ts>.<suffix>.json
- */
-function tryParseTimestampFromName(fileName: string): number | null {
-  const name = String(fileName);
-  const parts = name.split(".");
-  if (parts.length < 4) return null;
-
-  // We used base.ts.suffix.json in writeJsonVersioned
-  const ts = Number(parts[parts.length - 3]);
-  return Number.isFinite(ts) ? ts : null;
-}
-
 async function writeStatusMarker(
   statusDir: string,
   inboxDir: string,
@@ -339,34 +285,50 @@ async function writeStatusMarker(
   });
 }
 
-/**
- * Extract the entity group key from an inbox filename.
- *
- * Inbox files follow the pattern:  {prefix}.{entityId}.{epochMs}.{nonce}.json
- * The group key is "{prefix}.{entityId}" — everything before the timestamp.
- *
- * Returns null for files that don't match the pattern (non-standard names).
- */
-function entityKeyFromFilename(name: string): string | null {
-  if (!name.endsWith(".json")) return null;
-  const base = name.slice(0, -5);
-  const parts = base.split(".");
-  // Need at least: prefix, entityId, ts, nonce
-  if (parts.length < 4) return null;
-  const ts = parts[parts.length - 2];
-  if (!/^\d{10,}$/.test(ts)) return null;
-  return parts.slice(0, parts.length - 2).join(".");
+async function classifyDedupeCandidates(names: string[], inboxDir: string, source: FileSource): Promise<InboxDedupeCandidate[]> {
+  const keys = names.map((name) => entityKeyFromFilename(name)).filter((key): key is string => Boolean(key));
+  const keyCounts = new Map<string, number>();
+  for (const key of keys) keyCounts.set(key, (keyCounts.get(key) ?? 0) + 1);
+
+  const candidates: InboxDedupeCandidate[] = [];
+  for (const name of names) {
+    const key = entityKeyFromFilename(name);
+    if (!key || (keyCounts.get(key) ?? 0) < 2) continue;
+
+    const fullPath = `${inboxDir}/${name}`.replace(/\/+/g, "/");
+    let mode: InboxFileMode = "unknown";
+    try {
+      const payload = await readJson<any>(fullPath, source);
+      mode = inferInboxFileMode(payload);
+    } catch {
+      mode = "unknown";
+    }
+    candidates.push({ name, mode });
+  }
+  return candidates;
 }
 
-/**
- * Extract the embedded epoch-ms timestamp from an inbox filename.
- * Returns 0 if the name doesn't match the expected pattern.
- */
-function filenameTs(name: string): number {
-  if (!name.endsWith(".json")) return 0;
-  const base = name.slice(0, -5);
-  const parts = base.split(".");
-  if (parts.length < 4) return 0;
-  const ts = parseInt(parts[parts.length - 2], 10);
-  return Number.isFinite(ts) ? ts : 0;
+function inferInboxFileMode(payload: unknown): InboxFileMode {
+  if (Array.isArray(payload)) {
+    const childModes = payload.map((entry) => inferInboxFileMode(entry));
+    if (childModes.some((mode) => mode === "patch")) return "patch";
+    if (childModes.length && childModes.every((mode) => mode === "snapshot")) return "snapshot";
+    return "unknown";
+  }
+  if (!payload || typeof payload !== "object") return "unknown";
+
+  const record = payload as Record<string, unknown>;
+  if (record.type === "import") {
+    const mode = typeof record.mode === "string" ? record.mode.toLowerCase() : "";
+    if (mode === "patch") return "patch";
+    if (mode === "upsert" || mode === "delete") return "snapshot";
+    return "unknown";
+  }
+  if (Array.isArray(record.records)) {
+    return inferInboxFileMode(record.records);
+  }
+  if (typeof record.docType === "string" && Object.prototype.hasOwnProperty.call(record, "foundry")) {
+    return "snapshot";
+  }
+  return "unknown";
 }

@@ -93,6 +93,41 @@ This allows stability even in:
 
 ---
 
+## VaultSync Readiness Signal
+
+VaultSync emits a deterministic readiness signal for local orchestration:
+
+- File pattern: `vaultsync/meta/status.<timestamp>.json` under the active Foundry world data directory
+- Producer: runtime heartbeat (`src/runtime/world.ts`)
+- Required fields for "ready":
+  - `"moduleId": "vault-sync"`
+  - `"isReady": true`
+
+Typical success shape:
+
+```json
+{
+  "schema": "vaultsync.status.v1",
+  "moduleId": "vault-sync",
+  "isReady": true,
+  "reason": "heartbeat",
+  "lastHeartbeatAt": "2026-03-20T22:00:00.000Z"
+}
+```
+
+Typical failure shape (module not ready yet):
+
+```json
+{
+  "schema": "vaultsync.status.v1",
+  "moduleId": "vault-sync",
+  "isReady": false,
+  "reason": "beforeunload"
+}
+```
+
+---
+
 # Primary Use Case
 
 Vault Sync exists to enable:
@@ -182,6 +217,16 @@ Core export and import systems are functional and stable for:
 - Chat events
 
 Future enhancements may include:
+
+---
+
+# Local Quality Commands
+
+From `/Users/ryanoconnor/Documents/development/foundryvtt/vaultsync`:
+
+- `npm test` runs the baseline Node test runner suite.
+- `npm run typecheck` runs TypeScript checks.
+- `npm run build` builds the module bundle.
 
 - Scene export
 - Token state export
